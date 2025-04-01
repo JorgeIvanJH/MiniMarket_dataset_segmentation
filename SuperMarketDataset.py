@@ -3,7 +3,7 @@ import h5py
 import random
 import glob
 import numpy as np
-
+import os
 
 
 
@@ -74,8 +74,8 @@ class SegmentationDataset(Dataset):
         #target_hdf5_file = self.dataset_dir + "coffee_nescafe_3in1_original_6cups_1200_2048_segmentation_20480_12000"
         #target_hdf5_file = self.dataset_dir + "coffee_nescafe_3in1_original_6cups_1200_2048_segmentation_20480_4800"
         #target_hdf5_file = self.dataset_dir + "shampoo_head_and_shoulders_citrus_400ml_1200_2048_segmentation_4800"
-        target_hdf5_file = self.dataset_dir + target_object_dataset_name
-                
+        # target_hdf5_file = self.dataset_dir + target_object_dataset_name
+        target_hdf5_file = os.path.join(self.dataset_dir, target_object_dataset_name)
         # Target class training data collection
         with h5py.File(target_hdf5_file, "r") as f:
             point_data = f["seg_points"][()]  # returns as a numpy array

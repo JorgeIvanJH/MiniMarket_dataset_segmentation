@@ -4,6 +4,9 @@ import torch.nn.functional as F
 from time import time
 import numpy as np
 
+NUM_POINTS_PER_SEG_SAMPLE = 40960
+NUM_POINTS = NUM_POINTS_PER_SEG_SAMPLE
+
 def timeit(tag, t):
     print("{}: {}s".format(tag, time() - t))
     return time()
@@ -319,12 +322,9 @@ class PointNetFeaturePropagation(nn.Module):
 
 
 class PointNet2_SegHead(nn.Module):
-    def __init__(self, num_classes):
+    def __init__(self, num_points=NUM_POINTS, num_global_feats=1024,  m = 2):
         super(PointNet2_SegHead, self).__init__()
-        #self.sa1 = PointNetSetAbstraction(1024, 0.1, 32, 9 + 3, [32, 32, 64], False)
-        #self.sa2 = PointNetSetAbstraction(256, 0.2, 32, 64 + 3, [64, 64, 128], False)
-        #self.sa3 = PointNetSetAbstraction(64, 0.4, 32, 128 + 3, [128, 128, 256], False)
-        #self.sa4 = PointNetSetAbstraction(16, 0.8, 32, 256 + 3, [256, 256, 512], False)
+
         self.sa1 = PointNetSetAbstraction(1024, 0.02, 32, 9 + 0, [32, 32, 64], False)
         self.sa2 = PointNetSetAbstraction(256, 0.1, 32, 64 + 3, [64, 64, 128], False)
         self.sa3 = PointNetSetAbstraction(64, 0.2, 32, 128 + 3, [128, 128, 256], False)
@@ -336,7 +336,7 @@ class PointNet2_SegHead(nn.Module):
         self.conv1 = nn.Conv1d(128, 128, 1)
         self.bn1 = nn.BatchNorm1d(128)
         self.drop1 = nn.Dropout(0.5)
-        self.conv2 = nn.Conv1d(128, num_classes, 1)
+        self.conv2 = nn.Conv1d(128, m, 1)
 
     def forward(self, xyz):
         l0_points = xyz

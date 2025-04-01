@@ -10,7 +10,7 @@ from torch.utils.data import Dataset
 import numpy as np
 
 
-NUM_POINTS_PER_SEG_SAMPLE = 20480
+NUM_POINTS_PER_SEG_SAMPLE = 40960
 NUM_POINTS = NUM_POINTS_PER_SEG_SAMPLE
 
 # ============================================================================

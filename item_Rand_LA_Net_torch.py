@@ -47,7 +47,7 @@ class SharedMLP(nn.Module):
 
             Parameters
             ----------
-            input: torch.Tensor, shape (B, d_in, N, K)
+            input: torch.Tensor, shape (B, num_points, N, K)
 
             Returns
             -------
@@ -128,7 +128,7 @@ class AttentivePooling(nn.Module):
 
             Parameters
             ----------
-            x: torch.Tensor, shape (B, d_in, N, K)
+            x: torch.Tensor, shape (B, num_points, N, K)
 
             Returns
             -------
@@ -138,21 +138,21 @@ class AttentivePooling(nn.Module):
         scores = self.score_fn(x.permute(0,2,3,1)).permute(0,3,1,2)
 
         # sum over the neighbors
-        features = torch.sum(scores * x, dim=-1, keepdim=True) # shape (B, d_in, N, 1)
+        features = torch.sum(scores * x, dim=-1, keepdim=True) # shape (B, num_points, N, 1)
 
         return self.mlp(features)
 
 
 
 class LocalFeatureAggregation(nn.Module):
-    def __init__(self, d_in, d_out, num_neighbors, device='cpu'):
+    def __init__(self, num_points, d_out, num_neighbors, device='cpu'):
         super(LocalFeatureAggregation, self).__init__()
 
         self.num_neighbors = num_neighbors
 
-        self.mlp1 = SharedMLP(d_in, d_out//2, activation_fn=nn.LeakyReLU(0.2))
+        self.mlp1 = SharedMLP(num_points, d_out//2, activation_fn=nn.LeakyReLU(0.2))
         self.mlp2 = SharedMLP(d_out, 2*d_out)
-        self.shortcut = SharedMLP(d_in, 2*d_out, bn=True)
+        self.shortcut = SharedMLP(num_points, 2*d_out, bn=True)
 
         self.lse1 = LocalSpatialEncoding(d_out//2, num_neighbors, device)
         self.lse2 = LocalSpatialEncoding(d_out//2, num_neighbors, device)
@@ -171,7 +171,7 @@ class LocalFeatureAggregation(nn.Module):
             ----------
             coords: torch.Tensor, shape (B, N, 3)
                 coordinates of the point cloud
-            features: torch.Tensor, shape (B, d_in, N, 1)
+            features: torch.Tensor, shape (B, num_points, N, 1)
                 features of the point cloud
 
             Returns
@@ -201,7 +201,7 @@ def compute_loss(end_points, dataset, criterion):
     logits = end_points['logits']
     labels = end_points['labels']
 
-    logits = logits.transpose(1, 2).reshape(-1, dataset.num_classes)
+    logits = logits.transpose(1, 2).reshape(-1, dataset.m)
     labels = labels.reshape(-1)
 
     # Boolean mask of points that should be ignored
@@ -215,7 +215,7 @@ def compute_loss(end_points, dataset, criterion):
     valid_logits = logits[valid_idx, :]
     valid_labels_init = labels[valid_idx]
     # Reduce label values in the range of logit shape
-    reducing_list = torch.arange(0, dataset.num_classes).long().to(logits.device)
+    reducing_list = torch.arange(0, dataset.m).long().to(logits.device)
     inserted_value = torch.zeros((1,)).long().to(logits.device)
     for ign_label in dataset.ignored_labels:
         reducing_list = torch.cat([reducing_list[:ign_label], inserted_value, reducing_list[ign_label:]], 0)
@@ -227,13 +227,13 @@ def compute_loss(end_points, dataset, criterion):
 
 
 class RandLANet(nn.Module):
-    def __init__(self, d_in, num_classes, num_neighbors=16, decimation=4, device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
+    def __init__(self, num_points, m, num_neighbors=16, decimation=4, device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
         super(RandLANet, self).__init__()
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.num_neighbors = num_neighbors
         self.decimation = decimation
 
-        self.fc_start = nn.Linear(d_in, 8)
+        self.fc_start = nn.Linear(num_points, 8)
         self.bn_start = nn.Sequential(
             nn.BatchNorm2d(8, eps=1e-6, momentum=0.99),
             nn.LeakyReLU(0.2)
@@ -267,7 +267,7 @@ class RandLANet(nn.Module):
             SharedMLP(8, 64, bn=True, activation_fn=nn.ReLU()),
             SharedMLP(64, 32, bn=True, activation_fn=nn.ReLU()),
             nn.Dropout(),
-            SharedMLP(32, num_classes)
+            SharedMLP(32, m)
         )
         self.device = device
 
@@ -279,12 +279,12 @@ class RandLANet(nn.Module):
 
             Parameters
             ----------
-            input: torch.Tensor, shape (B, N, d_in)
+            input: torch.Tensor, shape (B, N, num_points)
                 input points
 
             Returns
             -------
-            torch.Tensor, shape (B, num_classes, N)
+            torch.Tensor, shape (B, m, N)
                 segmentation scores for each point
         """
         N = input.size(1)
@@ -307,7 +307,7 @@ class RandLANet(nn.Module):
         x = x.to(device)
 
         for lfa in self.encoder:
-            # at iteration i, x.shape = (B, N//(d**i), d_in)
+            # at iteration i, x.shape = (B, N//(d**i), num_points)
             x = lfa(coords[:,:N//decimation_ratio], x)
             x_stack.append(x.clone())
             decimation_ratio *= d

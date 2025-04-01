@@ -1,3 +1,12 @@
+
+'''
+
+You should place the segmentation dataset in the folder "object_segmentation_dataset"
+This is omited from the files due to size.
+
+
+'''
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -5,21 +14,23 @@ import torch.optim as optim
 
 from torchmetrics.classification import MulticlassMatthewsCorrCoef
 from torch.utils.data import DataLoader
-
+from torch.utils.data import Dataset
+import os
 import numpy as np
 from matplotlib import pyplot as plt
+import pandas as pd
+#import tensorrt
 import time
 
 from SuperMarketDataset import SegmentationDataset
 
+from item_pointnet_torch import compute_iou
 from item_pointnet2_torch import PointNet2_SegHead
 from item_pointnet2_torch import PointNet2_SegLoss
-from item_pointnet_torch import compute_iou
 
 
-print(torch.cuda.is_available())
-print(torch.cuda.get_device_name(0))  # 0 corresponds to the first GPU
-
+# print(torch.cuda.is_available())
+# print(torch.cuda.get_device_name(0))  # 0 corresponds to the first GPU
 
 import getpass
 
@@ -30,41 +41,36 @@ import getpass
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-NUM_POINTS = 2048
+NUM_POINTS = 4096
 NUM_CLASSES = 2
 #BATCH_SIZE = 16
 BATCH_SIZE = 2
 NUM_EPOCHS = 10
 
 
-SEGMENTAION_DATASET_PATH = "/home/"+getpass.getuser()+"/MiniMarket_dataset_segmentation/object_segmentation_dataset/"
-SEGMENTAION_MODEL_PATH = "/home/"+getpass.getuser()+"/MiniMarket_dataset_segmentation/object_segmentation_models/"
+SEGMENTAION_DATASET_PATH = r"D:\Datasets\MinimarketPointCloud\MiniMarket_point_clouds\4096\segmentation_dataset"
+SEGMENTAION_MODEL_PATH = os.path.join(os.getcwd(), "object_segmentation_models")
+if not os.path.exists(SEGMENTAION_MODEL_PATH):
+    os.makedirs(SEGMENTAION_MODEL_PATH)
 
-NUM_POINTS_PER_SEG_SAMPLE = 20480
+NUM_POINTS_PER_SEG_SAMPLE = 40960
 
-TARGET_OBJECT_DATASET_NAME = "shampoo_head_and_shoulders_citrus_400ml_1200_2048_segmentation_4800"
+TARGET_OBJECT_DATASET_NAME = "ketchup_heinz_400ml_1200_4096_segmentation_40960_1200.h5"
 
 
 
 LR = 0.0001
 REG_WEIGHT = 0.001
 
+
+
 dataset = SegmentationDataset(SEGMENTAION_DATASET_PATH, TARGET_OBJECT_DATASET_NAME, NUM_POINTS_PER_SEG_SAMPLE)
-train_dataset, valid_dataset = torch.utils.data.random_split(dataset,[4000,800])
+
+dataset_size = len(dataset)
+train_size = int(0.8 * dataset_size) # 80% training set
+val_size = dataset_size - train_size # 20% validation set
+
+train_dataset, valid_dataset = torch.utils.data.random_split(dataset,[train_size, val_size])
 #train_dataset, valid_dataset = torch.utils.data.random_split(dataset,[10000,2000])
 train_dataloader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 valid_dataloader = DataLoader(valid_dataset, batch_size=BATCH_SIZE, shuffle=True)
@@ -83,7 +89,7 @@ for i in range(BATCH_SIZE):
     ax.set_axis_off()
     #plt.title(labels_map[label])
     plt.axis("off")
-#plt.show()
+plt.show()
 
 # Plot sample
 #fig = plt.figure(figsize=(5, 5))
@@ -127,10 +133,7 @@ GLOBAL_FEATS = 1024
 
 
 
-def inplace_relu(m):
-    classname = m.__class__.__name__
-    if classname.find('ReLU') != -1:
-        m.inplace=True
+
 
 
 CATEGORIES = { 'alien':0, 'target':1, }
@@ -141,12 +144,11 @@ LR = 0.0001
 
 points, targets = next(iter(train_dataloader))
 
-seg_model = PointNet2_SegHead(NUM_CLASSES)
-seg_model.apply(inplace_relu)
-points = points.transpose(2, 1).to(DEVICE)
-print("points.shape",points.shape)
-seg_model = seg_model.to(DEVICE)
-out, _= seg_model(points.float())
+# seg_model = PointNetSegHead(num_points=NUM_POINTS_PER_SEG_SAMPLE, m=NUM_CLASSES)
+seg_model = PointNet2_SegHead(num_points=NUM_POINTS_PER_SEG_SAMPLE, m=NUM_CLASSES)
+
+out, _ = seg_model(points.float().transpose(2, 1))
+print(f'Seg shape: {out.shape}')
 
 alpha = np.ones(len(CATEGORIES))
 gamma = 1
@@ -174,16 +176,6 @@ valid_iou = []
 
 
 
-
-
-
-
-
-
-
-
-
-
 # stuff for training
 num_train_batch = int(np.ceil(len(train_dataset)/BATCH_SIZE))
 num_valid_batch = int(np.ceil(len(valid_dataset)/BATCH_SIZE))
@@ -195,18 +187,15 @@ for epoch in range(1, NUM_EPOCHS + 1):
     _train_accuracy = []
     _train_mcc = []
     _train_iou = []
-
-    
     for i, (points, targets) in enumerate(train_dataloader, 0):
 
         points = points.transpose(2, 1).to(DEVICE)
-        #print("points.shape",points.shape)
         targets = targets.type(torch.LongTensor).squeeze().to(DEVICE)
         # zero gradients
         optimizer.zero_grad()
         
         # get predicted class logits
-        preds, _= seg_model(points.float())
+        preds, _ = seg_model(points.float())
 
         # get class predictions
         pred_choice = torch.softmax(preds, dim=2).argmax(dim=2)
@@ -266,7 +255,7 @@ for epoch in range(1, NUM_EPOCHS + 1):
 
             points = points.transpose(2, 1).to(DEVICE)
             targets = targets.type(torch.LongTensor).squeeze().to(DEVICE)
-            preds, _= seg_model(points.float())
+            preds, _ = seg_model(points.float())
             
             pred_choice = torch.softmax(preds, dim=2).argmax(dim=2)
             
@@ -333,4 +322,3 @@ ax[3].set_title('iou')
 fig.legend(loc='upper right')
 plt.subplots_adjust(wspace=0., hspace=0.85)
 plt.show()
-
