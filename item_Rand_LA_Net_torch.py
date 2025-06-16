@@ -9,11 +9,7 @@ import time
 
 #from annoy import AnnoyIndex
 import random
-
-try:
-    from torch_points import knn
-except (ModuleNotFoundError, ImportError):
-    from torch_points_kernels import knn
+from torch_points_kernels import knn
 
 class SharedMLP(nn.Module):
     def __init__(
@@ -42,17 +38,7 @@ class SharedMLP(nn.Module):
         self.activation_fn = activation_fn
 
     def forward(self, input):
-        r"""
-            Forward pass of the network
 
-            Parameters
-            ----------
-            input: torch.Tensor, shape (B, num_points, N, K)
-
-            Returns
-            -------
-            torch.Tensor, shape (B, d_out, N, K)
-        """
         x = self.conv(input)
         if self.batch_norm:
             x = self.batch_norm(x)
@@ -70,34 +56,15 @@ class LocalSpatialEncoding(nn.Module):
 
         self.device = device
 
-    #def forward(self, coords, features, knn_output):
     def forward(self, coords, features, idx, dist):
-        r"""
-            Forward pass
 
-            Parameters
-            ----------
-            coords: torch.Tensor, shape (B, N, 3)
-                coordinates of the point cloud
-            features: torch.Tensor, shape (B, d, N, 1)
-                features of the point cloud
-            neighbors: tuple
-
-            Returns
-            -------
-            torch.Tensor, shape (B, 2*d, N, K)
-        """
         # finding neighboring points
         #idx, dist = knn_output
-        B, N, K = idx.size()
-        # idx(B, N, K), coords(B, N, 3)
-        # neighbors[b, i, n, k] = coords[b, idx[b, n, k], i] = extended_coords[b, i, extended_idx[b, i, n, k], k]
+        B, N, K = idx.shape
+        
         extended_idx = idx.unsqueeze(1).expand(B, 3, N, K)
         extended_coords = coords.transpose(-2,-1).unsqueeze(-1).expand(B, 3, N, K)
-        neighbors = torch.gather(extended_coords, 2, extended_idx).cuda() # shape (B, 3, N, K)
-        # if USE_CUDA:
-        #     neighbors = neighbors.cuda()
-
+        neighbors = torch.gather(extended_coords, 2, extended_idx).to("cpu")
         # relative point position encoding
         concat = torch.cat((
             extended_coords,
@@ -111,7 +78,6 @@ class LocalSpatialEncoding(nn.Module):
         ), dim=-3)
 
 
-
 class AttentivePooling(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(AttentivePooling, self).__init__()
@@ -123,17 +89,7 @@ class AttentivePooling(nn.Module):
         self.mlp = SharedMLP(in_channels, out_channels, bn=True, activation_fn=nn.ReLU())
 
     def forward(self, x):
-        r"""
-            Forward pass
 
-            Parameters
-            ----------
-            x: torch.Tensor, shape (B, num_points, N, K)
-
-            Returns
-            -------
-            torch.Tensor, shape (B, d_out, N, 1)
-        """
         # computing attention scores
         scores = self.score_fn(x.permute(0,2,3,1)).permute(0,3,1,2)
 
@@ -164,21 +120,9 @@ class LocalFeatureAggregation(nn.Module):
         
 
     def forward(self, coords, features):
-        r"""
-            Forward pass
 
-            Parameters
-            ----------
-            coords: torch.Tensor, shape (B, N, 3)
-                coordinates of the point cloud
-            features: torch.Tensor, shape (B, num_points, N, 1)
-                features of the point cloud
-
-            Returns
-            -------
-            torch.Tensor, shape (B, 2*d_out, N, 1)
-        """
-        knn_output = knn(coords.cpu().contiguous(), coords.cpu().contiguous(), self.num_neighbors)
+        coords = coords.transpose(1, 2).cpu().contiguous().float()  # [B, 3, N] → [B, N, 3]
+        knn_output = knn(coords,coords, self.num_neighbors)
         device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         coords = coords.to(device)
         
@@ -227,13 +171,13 @@ def compute_loss(end_points, dataset, criterion):
 
 
 class RandLANet(nn.Module):
-    def __init__(self, num_points, m, num_neighbors=16, decimation=4, device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
+    def __init__(self, num_points, m, num_neighbors=2, decimation=4, device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
         super(RandLANet, self).__init__()
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.num_neighbors = num_neighbors
         self.decimation = decimation
 
-        self.fc_start = nn.Linear(num_points, 8)
+        self.fc_start = nn.Linear(6, 8)
         self.bn_start = nn.Sequential(
             nn.BatchNorm2d(8, eps=1e-6, momentum=0.99),
             nn.LeakyReLU(0.2)
@@ -274,83 +218,81 @@ class RandLANet(nn.Module):
         self = self.to(device)
 
     def forward(self, input):
-        r"""
-            Forward pass
-
-            Parameters
-            ----------
-            input: torch.Tensor, shape (B, N, num_points)
-                input points
-
-            Returns
-            -------
-            torch.Tensor, shape (B, m, N)
-                segmentation scores for each point
-        """
-        N = input.size(1)
+        N = input.shape[2]
         d = self.decimation
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        #coords = input[...,:3].clone().cpu()
-        coords = input[...,:3].clone()
-        coords = coords.to(device)
-        x = self.fc_start(input).transpose(-2,-1).unsqueeze(-1).to(device)
-        x = self.bn_start(x) # shape (B, d, N, 1)
+
+        coords = input[:, :3, :].clone().to(device)       # [B, 3, N]
+        x = self.fc_start(input.transpose(1, 2)).transpose(1, 2).unsqueeze(-1)  # [B, 8, N, 1]
+        x = self.bn_start(x)
 
         decimation_ratio = 1
 
         # <<<<<<<<<< ENCODER
         x_stack = []
+        coord_stack = []
 
         permutation = torch.randperm(N)
-        coords = coords[:,permutation]
-        x = x[:,:,permutation]
-        x = x.to(device)
+        coords = coords[:, :, permutation]
+        x = x[:, :, permutation]
 
         for lfa in self.encoder:
-            # at iteration i, x.shape = (B, N//(d**i), num_points)
-            x = lfa(coords[:,:N//decimation_ratio], x)
-            x_stack.append(x.clone())
+            num_points = N // decimation_ratio
+            coords_i = coords[:, :, :num_points]
+            x_i = x[:, :, :num_points]
+            
+            x_i = lfa(coords_i, x_i)
+
+            # Save matching coords/features for skip connections
+            x_stack.append(x_i.clone())
+            coord_stack.append(coords_i.clone())
+
+            # Update coords and x for next layer
+            coords = coords_i
+            x = x_i
             decimation_ratio *= d
-            x = x[:,:,:N//decimation_ratio]
 
-
-        # # >>>>>>>>>> ENCODER
-
+        # >>>>>>>>>> BOTTLENECK
         x = self.mlp(x)
 
         # <<<<<<<<<< DECODER
         for mlp in self.decoder:
-            neighbors, _ = knn(
-                coords[:,:N//decimation_ratio].cpu().contiguous(), # original set
-                coords[:,:d*N//decimation_ratio].cpu().contiguous(), # upsampled set
-                1
-            ) # shape (B, N, 1)
-            neighbors = neighbors.to(self.device)
-
-            extended_neighbors = neighbors.unsqueeze(1).expand(-1, x.size(1), -1, 1)
-
-            x_neighbors = torch.gather(x, -2, extended_neighbors)
-
-            x = torch.cat((x_neighbors, x_stack.pop()), dim=1)
-
-            x = mlp(x)
-
             decimation_ratio //= d
 
-        # >>>>>>>>>> DECODER
-        # inverse permutation
-        x = x[:,:,torch.argsort(permutation)]
-        scores = self.fc_end(x)
-        scores = scores.permute(0, 2, 1, 3)
-        return scores.squeeze(-1)
+            # Retrieve matching skip connection tensors
+            x_skip = x_stack.pop()
+            coords_skip = coord_stack.pop()  # [B, 3, N_high]
+
+            # Use KNN to upsample x to match resolution of x_skip
+            query_coords = coords_skip.transpose(1, 2).contiguous().float().cpu()  # high-res
+            support_coords = coords.transpose(1, 2).contiguous().float().cpu()     # low-res
+
+            neighbors, _ = knn(support_coords,query_coords, 1)  # [B, N_high, 1]
+            neighbors = neighbors.to(device)
+
+            # Expand neighbor indices to gather features
+            extended_neighbors = neighbors.unsqueeze(1).expand(-1, x.size(1), -1, -1)
+            x_neighbors = torch.gather(x, dim=2, index=extended_neighbors)  # [B, C, N_high, 1]
+
+            # Fuse with skip connection
+            x = torch.cat((x_neighbors, x_skip), dim=1)  # concatenate on channel dim
+            x = mlp(x)
+
+            # Update coords for next decoder step
+            coords = coords_skip
+
+        # >>>>>>>>>> POST-DECODER
+
+        # Invert permutation
+        x = x[:, :, torch.argsort(permutation)]
+        scores = self.fc_end(x)  # [B, C, N, 1]
+        scores = scores.permute(0, 2, 1, 3)  # [B, N, C, 1]
+
+        return scores.squeeze(-1)  # [B, N, C]
+
 
 
 class RandLANet_SegLoss(nn.Module):
-    #def __init__(self):
-    #    super(PointNet2_SegLoss, self).__init__()
-    #def forward(self, pred, target, trans_feat, weight):
-    #    total_loss = F.nll_loss(pred, target, weight=weight)
-    #    return total_loss
     
     def __init__(self, alpha=None, gamma=0, size_average=True, dice=False):
         super(RandLANet_SegLoss, self).__init__()
