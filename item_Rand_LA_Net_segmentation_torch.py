@@ -7,6 +7,7 @@ from torchmetrics.classification import MulticlassMatthewsCorrCoef
 from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
 import os
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 import numpy as np
 from matplotlib import pyplot as plt
 import pandas as pd
@@ -210,7 +211,7 @@ for epoch in range(1, NUM_EPOCHS + 1):
     if valid_iou[-1] >= best_iou:
         best_iou = valid_iou[-1]
         path_w = os.path.join(SAVE_DIR, f'RandLaNet_{dataset_name}_best_iou_{best_iou}.pth')
-        torch.save(path_w)
+        torch.save(seg_model.state_dict(),path_w)
 
     # Update Graph
     fig, ax = plt.subplots(4, 1, figsize=(8, 5))
