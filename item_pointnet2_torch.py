@@ -322,7 +322,7 @@ class PointNetFeaturePropagation(nn.Module):
 
 
 class PointNet2_SegHead(nn.Module):
-    def __init__(self, num_points=NUM_POINTS, num_global_feats=1024,  m = 2):
+    def __init__(self,  m = 2):
         super(PointNet2_SegHead, self).__init__()
 
         self.sa1 = PointNetSetAbstraction(1024, 0.02, 32, 9 + 0, [32, 32, 64], False)

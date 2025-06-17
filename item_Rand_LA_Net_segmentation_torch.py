@@ -22,13 +22,14 @@ from item_Rand_LA_Net_torch import RandLANet_SegLoss
 
 
 # CHANGEABLES
-PC_SEGMENTATION_DIR = r"D:\Datasets\MinimarketPointCloud\MiniMarket_point_clouds\2048\segmentation_dataset\ketchup_heinz_400ml_segmentation_20250526_121710_numPoints_2048_maxObjects_10_orientations_1.h5"
+# PC_SEGMENTATION_DIR = r"D:\Datasets\MinimarketPointCloud\MiniMarket_point_clouds\2048\segmentation_dataset\ketchup_heinz_400ml_segmentation_20250526_121710_numPoints_2048_maxObjects_10_orientations_1.h5"
+PC_SEGMENTATION_DIR = r"D:\Datasets\MinimarketPointCloud\MiniMarket_point_clouds\2048\segmentation_dataset\ketchup_heinz_400ml_segmentation_date_20250526_time_175553_numPoints_2048_maxObjects_10_numrientations_10.h5"
 # PC_SEGMENTATION_DIR = r"D:\Datasets\MinimarketPointCloud\MiniMarket_point_clouds\64\segmentation_dataset\ketchup_heinz_400ml_segmentation_date_20250526_time_163143_numPoints_64_maxObjects_10_numOrientations_10.h5"
 dataset_name = os.path.basename(PC_SEGMENTATION_DIR)
 SAVE_DIR = os.path.join(os.getcwd(), "experiments", dataset_name)
 if not os.path.exists(SAVE_DIR):
     os.makedirs(SAVE_DIR)
-BATCH_SIZE = 8
+BATCH_SIZE = 4
 NUM_EPOCHS = 10
 LR = 0.0001
 REG_WEIGHT = 0.001
@@ -214,24 +215,36 @@ for epoch in range(1, NUM_EPOCHS + 1):
         torch.save(seg_model.state_dict(),path_w)
 
     # Update Graph
+
     fig, ax = plt.subplots(4, 1, figsize=(8, 5))
-    ax[0].plot(np.arange(1, epoch + 1), train_loss, label='train')
-    ax[0].plot(np.arange(1, epoch + 1), valid_loss, label='valid')
+    epochs = np.arange(1, epoch + 1)
+    ax[0].plot(epochs, train_loss, label='train')
+    ax[0].plot(epochs, valid_loss, label='valid')
     ax[0].set_title('loss')
 
-    ax[1].plot(np.arange(1, epoch + 1), train_accuracy)
-    ax[1].plot(np.arange(1, epoch + 1), valid_accuracy)
+    ax[1].plot(epochs, train_accuracy)
+    ax[1].plot(epochs, valid_accuracy)
     ax[1].set_title('accuracy')
 
-    ax[2].plot(np.arange(1, epoch + 1), train_mcc)
-    ax[2].plot(np.arange(1, epoch + 1), valid_mcc)
+    ax[2].plot(epochs, train_mcc)
+    ax[2].plot(epochs, valid_mcc)
     ax[2].set_title('mcc')
 
-    ax[3].plot(np.arange(1, epoch + 1), train_iou)
-    ax[3].plot(np.arange(1, epoch + 1), valid_iou)
+    ax[3].plot(epochs, train_iou)
+    ax[3].plot(epochs, valid_iou)
     ax[3].set_title('iou')
 
     fig.legend(loc='upper right')
     plt.subplots_adjust(wspace=0., hspace=0.85)
     path_i = os.path.join(SAVE_DIR, f'training_metrics_plot.png')
     fig.savefig(path_i)
+
+    print("train_loss: ", train_loss)
+    print("valid_loss: ", valid_loss)
+    print("train_accuracy: ", train_accuracy)
+    print("valid_accuracy: ", valid_accuracy)
+    print("train_mcc: ", train_mcc)
+    print("valid_mcc: ", valid_mcc)
+    print("train_iou: ", train_iou)
+    print("valid_iou: ", valid_iou)
+    print("epochs: ", epochs)

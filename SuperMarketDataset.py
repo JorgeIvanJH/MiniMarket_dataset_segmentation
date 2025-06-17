@@ -62,20 +62,9 @@ class ClassificationDataset(Dataset):
 class SegmentationDataset(Dataset):
     # number_of_alien_objects_to_train_against must be even number
     def __init__(self, 
-                 object_segmentation_dataset_directory, 
-                 target_object_dataset_name, 
-                 number_of_points_per_segmentation_sample):
-        self.dataset_dir = object_segmentation_dataset_directory
-        self.target_obj = target_object_dataset_name
-        self.num_points_per_seg_sample = number_of_points_per_segmentation_sample
-        
-        # Get the target object segmentation file
-        #target_hdf5_file = self.dataset_dir + target_object_name + "_segmentation_" + str(self.num_points_per_seg_sample)
-        #target_hdf5_file = self.dataset_dir + "coffee_nescafe_3in1_original_6cups_1200_2048_segmentation_20480_12000"
-        #target_hdf5_file = self.dataset_dir + "coffee_nescafe_3in1_original_6cups_1200_2048_segmentation_20480_4800"
-        #target_hdf5_file = self.dataset_dir + "shampoo_head_and_shoulders_citrus_400ml_1200_2048_segmentation_4800"
-        # target_hdf5_file = self.dataset_dir + target_object_dataset_name
-        target_hdf5_file = os.path.join(self.dataset_dir, target_object_dataset_name)
+                 target_hdf5_file):
+        self.target_hdf5_file = target_hdf5_file        
+
         # Target class training data collection
         with h5py.File(target_hdf5_file, "r") as f:
             point_data = f["seg_points"][()]  # returns as a numpy array
