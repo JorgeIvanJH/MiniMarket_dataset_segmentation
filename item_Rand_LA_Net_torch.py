@@ -312,13 +312,17 @@ class RandLANet_SegLoss(nn.Module):
     def forward(self, predictions, targets, pred_choice=None):
 
         # get Balanced Cross Entropy Loss
-        ce_loss = self.cross_entropy_loss(predictions.transpose(2, 1), targets)
+
+        ce_loss = self.cross_entropy_loss(predictions.reshape(-1, 2), targets.reshape(-1))
+
         #ce_loss = self.cross_entropy_loss(predictions, targets.float())
 
         # reformat predictions (b, n, c) -> (b*n, c)
-        predictions = predictions.contiguous().view(-1, predictions.size(2)) 
+        predictions = predictions.reshape(-1, predictions.size(2))
+
         # get predicted class probabilities for the true class
-        pn = F.softmax(predictions)
+        pn = F.softmax(predictions, dim=1)
+
         pn = pn.gather(1, targets.view(-1, 1)).view(-1)
 
         # compute loss (negative sign is included in ce_loss)
@@ -331,7 +335,7 @@ class RandLANet_SegLoss(nn.Module):
         else: return loss
     
     @staticmethod
-    def dice_loss(predictions, targets, eps=1):
+    def dice_loss(targets, predictions, eps=1):
         ''' Compute Dice loss, directly compare predictions with truth '''
 
         targets = targets.reshape(-1)

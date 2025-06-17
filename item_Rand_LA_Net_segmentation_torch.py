@@ -22,8 +22,12 @@ from item_Rand_LA_Net_torch import RandLANet_SegLoss
 
 # CHANGEABLES
 PC_SEGMENTATION_DIR = r"D:\Datasets\MinimarketPointCloud\MiniMarket_point_clouds\2048\segmentation_dataset\ketchup_heinz_400ml_segmentation_20250526_121710_numPoints_2048_maxObjects_10_orientations_1.h5"
+# PC_SEGMENTATION_DIR = r"D:\Datasets\MinimarketPointCloud\MiniMarket_point_clouds\64\segmentation_dataset\ketchup_heinz_400ml_segmentation_date_20250526_time_163143_numPoints_64_maxObjects_10_numOrientations_10.h5"
 dataset_name = os.path.basename(PC_SEGMENTATION_DIR)
-BATCH_SIZE = 3
+SAVE_DIR = os.path.join(os.getcwd(), "experiments", dataset_name)
+if not os.path.exists(SAVE_DIR):
+    os.makedirs(SAVE_DIR)
+BATCH_SIZE = 8
 NUM_EPOCHS = 10
 LR = 0.0001
 REG_WEIGHT = 0.001
@@ -54,8 +58,8 @@ points, targets = next(iter(train_dataloader))
 
 seg_model = RandLANet(num_points=NUM_POINTS_PER_SEG_SAMPLE, m=NUM_CLASSES)
 
-out, _ = seg_model(points.float().transpose(2, 1))
-print(f'Seg shape: {out.shape}')
+# out, _ = seg_model(points.float().transpose(2, 1))
+# print(f'Seg shape: {out.shape}')
 
 alpha = np.ones(NUM_CLASSES)
 gamma = 1
@@ -87,6 +91,7 @@ num_train_batch = int(np.ceil(len(train_dataset)/BATCH_SIZE))
 num_valid_batch = int(np.ceil(len(valid_dataset)/BATCH_SIZE))
 
 for epoch in range(1, NUM_EPOCHS + 1):
+    print(f'Epoch {epoch}/{NUM_EPOCHS}')
     # place model in training mode
     seg_model = seg_model.train()
     _train_loss = []
@@ -94,19 +99,17 @@ for epoch in range(1, NUM_EPOCHS + 1):
     _train_mcc = []
     _train_iou = []
     for i, (points, targets) in enumerate(train_dataloader, 0):
-
+        print(f'\t [{epoch}: {i+1}/{num_train_batch}] ' )
         points = points.transpose(2, 1).to(DEVICE)
-        print("points shape: ", points.shape)
         targets = targets.type(torch.LongTensor).squeeze().to(DEVICE)
         # zero gradients
         optimizer.zero_grad()
         
         # get predicted class logits
-        preds, _ = seg_model(points.float())
-
+        preds = seg_model(points.float())
         # get class predictions
-        pred_choice = torch.softmax(preds, dim=2).argmax(dim=2)
-
+        
+        pred_choice = torch.argmax(preds, dim=2)
         # get loss and perform backprop
         # Convert targets from one hot so torch can use it
         targets = torch.argmax(targets, dim=2)
@@ -119,9 +122,9 @@ for epoch in range(1, NUM_EPOCHS + 1):
         # get metrics
         correct = pred_choice.eq(targets.data).cpu().sum()
         accuracy = correct/float(BATCH_SIZE*NUM_POINTS_PER_SEG_SAMPLE)
-        mcc = mcc_metric(preds.transpose(2, 1), targets)
+        mcc = mcc_metric(preds.reshape(-1, 2), targets.reshape(-1))
         iou = compute_iou(targets, pred_choice)
-
+        print("iou: ", iou.item())
         # update epoch loss and accuracy
         _train_loss.append(loss.item())
         _train_accuracy.append(accuracy)
@@ -162,9 +165,9 @@ for epoch in range(1, NUM_EPOCHS + 1):
 
             points = points.transpose(2, 1).to(DEVICE)
             targets = targets.type(torch.LongTensor).squeeze().to(DEVICE)
-            preds, _ = seg_model(points.float())
+            preds = seg_model(points.float())
             
-            pred_choice = torch.softmax(preds, dim=2).argmax(dim=2)
+            pred_choice = torch.argmax(preds, dim=2)
             
             # Convert targets from one hot so torch can use it
             targets = torch.argmax(targets, dim=2)
@@ -173,7 +176,7 @@ for epoch in range(1, NUM_EPOCHS + 1):
             # get metrics
             correct = pred_choice.eq(targets.data).cpu().sum()
             accuracy = correct/float(BATCH_SIZE*NUM_POINTS_PER_SEG_SAMPLE)
-            mcc = mcc_metric(preds.transpose(2, 1), targets)
+            mcc = mcc_metric(preds.reshape(-1, 2), targets.reshape(-1))
             iou = compute_iou(targets, pred_choice)
 
             # update epoch loss and accuracy
@@ -206,26 +209,28 @@ for epoch in range(1, NUM_EPOCHS + 1):
     # save best models
     if valid_iou[-1] >= best_iou:
         best_iou = valid_iou[-1]
-        torch.save("RandLaNet_" + dataset_name + '.pth')
+        path_w = os.path.join(SAVE_DIR, f'RandLaNet_{dataset_name}_best_iou_{best_iou}.pth')
+        torch.save(path_w)
 
+    # Update Graph
+    fig, ax = plt.subplots(4, 1, figsize=(8, 5))
+    ax[0].plot(np.arange(1, epoch + 1), train_loss, label='train')
+    ax[0].plot(np.arange(1, epoch + 1), valid_loss, label='valid')
+    ax[0].set_title('loss')
 
-fig, ax = plt.subplots(4, 1, figsize=(8, 5))
-ax[0].plot(np.arange(1, NUM_EPOCHS + 1), train_loss, label='train')
-ax[0].plot(np.arange(1, NUM_EPOCHS + 1), valid_loss, label='valid')
-ax[0].set_title('loss')
+    ax[1].plot(np.arange(1, epoch + 1), train_accuracy)
+    ax[1].plot(np.arange(1, epoch + 1), valid_accuracy)
+    ax[1].set_title('accuracy')
 
-ax[1].plot(np.arange(1, NUM_EPOCHS + 1), train_accuracy)
-ax[1].plot(np.arange(1, NUM_EPOCHS + 1), valid_accuracy)
-ax[1].set_title('accuracy')
+    ax[2].plot(np.arange(1, epoch + 1), train_mcc)
+    ax[2].plot(np.arange(1, epoch + 1), valid_mcc)
+    ax[2].set_title('mcc')
 
-ax[2].plot(np.arange(1, NUM_EPOCHS + 1), train_mcc)
-ax[2].plot(np.arange(1, NUM_EPOCHS + 1), valid_mcc)
-ax[2].set_title('mcc')
+    ax[3].plot(np.arange(1, epoch + 1), train_iou)
+    ax[3].plot(np.arange(1, epoch + 1), valid_iou)
+    ax[3].set_title('iou')
 
-ax[3].plot(np.arange(1, NUM_EPOCHS + 1), train_iou)
-ax[3].plot(np.arange(1, NUM_EPOCHS + 1), valid_iou)
-ax[3].set_title('iou')
-
-fig.legend(loc='upper right')
-plt.subplots_adjust(wspace=0., hspace=0.85)
-plt.show()
+    fig.legend(loc='upper right')
+    plt.subplots_adjust(wspace=0., hspace=0.85)
+    path_i = os.path.join(SAVE_DIR, f'training_metrics_plot.png')
+    fig.savefig(path_i)
