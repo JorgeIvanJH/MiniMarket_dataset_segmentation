@@ -22,8 +22,8 @@ from item_Rand_LA_Net_torch import RandLANet_SegLoss
 
 
 # CHANGEABLES
-# PC_SEGMENTATION_DIR = r"D:\Datasets\MinimarketPointCloud\MiniMarket_point_clouds\2048\segmentation_dataset\ketchup_heinz_400ml_segmentation_20250526_121710_numPoints_2048_maxObjects_10_orientations_1.h5"
-PC_SEGMENTATION_DIR = r"D:\Datasets\MinimarketPointCloud\MiniMarket_point_clouds\2048\segmentation_dataset\ketchup_heinz_400ml_segmentation_date_20250526_time_175553_numPoints_2048_maxObjects_10_numrientations_10.h5"
+PC_SEGMENTATION_DIR = r"D:\Datasets\MinimarketPointCloud\MiniMarket_point_clouds\2048\segmentation_dataset\ketchup_heinz_400ml_segmentation_20250526_121710_numPoints_2048_maxObjects_10_orientations_1.h5"
+# PC_SEGMENTATION_DIR = r"D:\Datasets\MinimarketPointCloud\MiniMarket_point_clouds\2048\segmentation_dataset\ketchup_heinz_400ml_segmentation_date_20250526_time_175553_numPoints_2048_maxObjects_10_numrientations_10.h5"
 # PC_SEGMENTATION_DIR = r"D:\Datasets\MinimarketPointCloud\MiniMarket_point_clouds\64\segmentation_dataset\ketchup_heinz_400ml_segmentation_date_20250526_time_163143_numPoints_64_maxObjects_10_numOrientations_10.h5"
 dataset_name = os.path.basename(PC_SEGMENTATION_DIR)
 SAVE_DIR = os.path.join(os.getcwd(), "experiments", dataset_name)
@@ -63,7 +63,7 @@ seg_model = RandLANet(num_points=NUM_POINTS_PER_SEG_SAMPLE, m=NUM_CLASSES)
 # out, _ = seg_model(points.float().transpose(2, 1))
 # print(f'Seg shape: {out.shape}')
 
-alpha = np.ones(NUM_CLASSES)
+alpha = np.ones(NUM_CLASSES) # TODO: Change this to reflect class imbalance
 gamma = 1
 optimizer = optim.Adam(seg_model.parameters(), lr=LR)
 scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0.0001, max_lr=0.01, step_size_up=2000, cycle_momentum=False)
@@ -236,7 +236,7 @@ for epoch in range(1, NUM_EPOCHS + 1):
 
     fig.legend(loc='upper right')
     plt.subplots_adjust(wspace=0., hspace=0.85)
-    path_i = os.path.join(SAVE_DIR, f'training_metrics_plot.png')
+    path_i = os.path.join(SAVE_DIR, f'RandLaNet_training_metrics_plot.png')
     fig.savefig(path_i)
 
     print("train_loss: ", train_loss)

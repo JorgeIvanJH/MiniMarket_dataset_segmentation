@@ -1,26 +1,17 @@
-
-'''
-
-You should place the segmentation dataset in the folder "object_segmentation_dataset"
-This is omited from the files due to size.
-
-
-'''
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-
 from torchmetrics.classification import MulticlassMatthewsCorrCoef
 from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
 import os
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 import numpy as np
 from matplotlib import pyplot as plt
 import pandas as pd
-#import tensorrt
 import time
+import h5py
 
 from SuperMarketDataset import SegmentationDataset
 
@@ -29,134 +20,56 @@ from item_pointnet2_torch import PointNet2_SegHead
 from item_pointnet2_torch import PointNet2_SegLoss
 
 
-# print(torch.cuda.is_available())
-# print(torch.cuda.get_device_name(0))  # 0 corresponds to the first GPU
-
-import getpass
 
 
-
-
-
-
-
-
-NUM_POINTS = 4096
-NUM_CLASSES = 2
-#BATCH_SIZE = 16
-BATCH_SIZE = 2
+# CHANGEABLES
+PC_SEGMENTATION_DIR = r"D:\Datasets\MinimarketPointCloud\MiniMarket_point_clouds\2048\segmentation_dataset\ketchup_heinz_400ml_segmentation_20250526_121710_numPoints_2048_maxObjects_10_orientations_1.h5"
+# PC_SEGMENTATION_DIR = r"D:\Datasets\MinimarketPointCloud\MiniMarket_point_clouds\2048\segmentation_dataset\ketchup_heinz_400ml_segmentation_date_20250526_time_175553_numPoints_2048_maxObjects_10_numrientations_10.h5"
+# PC_SEGMENTATION_DIR = r"D:\Datasets\MinimarketPointCloud\MiniMarket_point_clouds\64\segmentation_dataset\ketchup_heinz_400ml_segmentation_date_20250526_time_163143_numPoints_64_maxObjects_10_numOrientations_10.h5"
+dataset_name = os.path.basename(PC_SEGMENTATION_DIR)
+SAVE_DIR = os.path.join(os.getcwd(), "experiments", dataset_name)
+if not os.path.exists(SAVE_DIR):
+    os.makedirs(SAVE_DIR)
+BATCH_SIZE = 4
 NUM_EPOCHS = 10
-
-
-SEGMENTAION_DATASET_PATH = r"D:\Datasets\MinimarketPointCloud\MiniMarket_point_clouds\4096\segmentation_dataset"
-SEGMENTAION_MODEL_PATH = os.path.join(os.getcwd(), "object_segmentation_models")
-if not os.path.exists(SEGMENTAION_MODEL_PATH):
-    os.makedirs(SEGMENTAION_MODEL_PATH)
-
-NUM_POINTS_PER_SEG_SAMPLE = 40960
-
-TARGET_OBJECT_DATASET_NAME = "ketchup_heinz_400ml_1200_4096_segmentation_40960_1200.h5"
-
-
-
 LR = 0.0001
 REG_WEIGHT = 0.001
 
+with h5py.File(PC_SEGMENTATION_DIR, 'r') as f:
+    # Read datasets
+    seg_points = f["seg_points"][:]
+    seg_colors = f["seg_colors"][:]
+    seg_labels = f["seg_labels"][:]
+    NUM_CLOUDS,NUM_POINTS_PER_SEG_SAMPLE,NUM_CLASSES = seg_labels.shape
 
 
-dataset = SegmentationDataset(SEGMENTAION_DATASET_PATH, TARGET_OBJECT_DATASET_NAME, NUM_POINTS_PER_SEG_SAMPLE)
+dataset = SegmentationDataset(PC_SEGMENTATION_DIR )
 
-dataset_size = len(dataset)
+dataset_size = NUM_CLOUDS
 train_size = int(0.8 * dataset_size) # 80% training set
 val_size = dataset_size - train_size # 20% validation set
 
 train_dataset, valid_dataset = torch.utils.data.random_split(dataset,[train_size, val_size])
-#train_dataset, valid_dataset = torch.utils.data.random_split(dataset,[10000,2000])
 train_dataloader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 valid_dataloader = DataLoader(valid_dataset, batch_size=BATCH_SIZE, shuffle=True)
 
-# Visualising segmentation sample
-labels_map = {
-    1: "Target",
-    0: "Alien",
-}
-fig = plt.figure(figsize=(20, 10))
-for i in range(BATCH_SIZE):
-    sample_idx = torch.randint(len(train_dataset), size=(1,)).item()
-    points, label = train_dataset[sample_idx]
-    ax = fig.add_subplot(2, int(BATCH_SIZE/2), i + 1, projection="3d")
-    ax.scatter(points[:, 0], points[:, 1], points[:, 2], c=points[:,3:])
-    ax.set_axis_off()
-    #plt.title(labels_map[label])
-    plt.axis("off")
-plt.show()
-
-# Plot sample
-#fig = plt.figure(figsize=(5, 5))
-#ax = Axes3D(fig)
-#ax = fig.add_subplot(1, 2, 1, projection="3d")
-#ax.set_xlim3d(-0.4, 0.4)
-#ax.set_ylim3d(-0.4, 0.4)
-#ax.set_zlim3d(-0.4, 0.4)
-#sample_idx = torch.randint(len(train_dataset), size=(1,)).item()
-#points, label = train_dataset[sample_idx]
-#print(points.shape)
-#ax.scatter(points[:,0], points[:,1], points[:,2], c=points[:,3:])
-#ax.set_axis_off()
-#plt.show()
-
-
-
-
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
-DEVICE
 
-
-#gamma = 1
-#alpha = np.ones(NUM_CLASSES)
-
-#points, targets = next(iter(train_dataloader))
-
-GLOBAL_FEATS = 1024
-#classifier = PointNetClassHead(k=NUM_CLASSES, num_global_feats=GLOBAL_FEATS)
-
-
-
-#optimizer = optim.Adam(classifier.parameters(), lr=LR)
-#scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0.0001, max_lr=0.01, step_size_up=2000, cycle_momentum=False)
-#criterion = PointNetLoss(alpha=alpha, gamma=gamma, reg_weight=REG_WEIGHT).to(DEVICE)
-
-#classifier = classifier.to(DEVICE)
-
-#mcc_metric = MulticlassMatthewsCorrCoef(num_classes=NUM_CLASSES).to(DEVICE)
-
-
-
-
-
-
-
-CATEGORIES = { 'alien':0, 'target':1, }
-COLOR_MAP = { 0:(255, 0, 0),   1:(0, 0, 255), }
-v_map_colors = np.vectorize(lambda x : COLOR_MAP[x])
-NUM_CLASSES = len(CATEGORIES)
 LR = 0.0001
 
 points, targets = next(iter(train_dataloader))
 
-# seg_model = PointNetSegHead(num_points=NUM_POINTS_PER_SEG_SAMPLE, m=NUM_CLASSES)
-seg_model = PointNet2_SegHead(num_points=NUM_POINTS_PER_SEG_SAMPLE, m=NUM_CLASSES)
+seg_model = PointNet2_SegHead()
 
-out, _ = seg_model(points.float().transpose(2, 1))
-print(f'Seg shape: {out.shape}')
+# out, _ = seg_model(points.float().transpose(2, 1))
+# print(f'Seg shape: {out.shape}')
 
-alpha = np.ones(len(CATEGORIES))
+alpha = np.ones(NUM_CLASSES) # TODO: Change this to reflect class imbalance
 gamma = 1
 optimizer = optim.Adam(seg_model.parameters(), lr=LR)
 scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0.0001, max_lr=0.01, step_size_up=2000, cycle_momentum=False)
-criterion = PointNet2_SegLoss(alpha=alpha, gamma=gamma, dice=True).to(DEVICE)
+criterion = PointNet2_SegLoss(alpha=alpha).to(DEVICE)
 seg_model = seg_model.to(DEVICE)
-
 mcc_metric = MulticlassMatthewsCorrCoef(num_classes=NUM_CLASSES).to(DEVICE)
 
 
@@ -181,6 +94,7 @@ num_train_batch = int(np.ceil(len(train_dataset)/BATCH_SIZE))
 num_valid_batch = int(np.ceil(len(valid_dataset)/BATCH_SIZE))
 
 for epoch in range(1, NUM_EPOCHS + 1):
+    print(f'Epoch {epoch}/{NUM_EPOCHS}')
     # place model in training mode
     seg_model = seg_model.train()
     _train_loss = []
@@ -188,7 +102,7 @@ for epoch in range(1, NUM_EPOCHS + 1):
     _train_mcc = []
     _train_iou = []
     for i, (points, targets) in enumerate(train_dataloader, 0):
-
+        print(f'\t [{epoch}: {i+1}/{num_train_batch}] ' )
         points = points.transpose(2, 1).to(DEVICE)
         targets = targets.type(torch.LongTensor).squeeze().to(DEVICE)
         # zero gradients
@@ -196,14 +110,13 @@ for epoch in range(1, NUM_EPOCHS + 1):
         
         # get predicted class logits
         preds, _ = seg_model(points.float())
-
         # get class predictions
-        pred_choice = torch.softmax(preds, dim=2).argmax(dim=2)
-
+        
+        pred_choice = torch.argmax(preds, dim=2)
         # get loss and perform backprop
         # Convert targets from one hot so torch can use it
         targets = torch.argmax(targets, dim=2)
-        loss = criterion(preds, targets, pred_choice) 
+        loss = criterion(preds, targets) 
         
         loss.backward()
         optimizer.step()
@@ -212,9 +125,9 @@ for epoch in range(1, NUM_EPOCHS + 1):
         # get metrics
         correct = pred_choice.eq(targets.data).cpu().sum()
         accuracy = correct/float(BATCH_SIZE*NUM_POINTS_PER_SEG_SAMPLE)
-        mcc = mcc_metric(preds.transpose(2, 1), targets)
+        mcc = mcc_metric(preds.reshape(-1, 2), targets.reshape(-1))
         iou = compute_iou(targets, pred_choice)
-
+        print("iou: ", iou.item())
         # update epoch loss and accuracy
         _train_loss.append(loss.item())
         _train_accuracy.append(accuracy)
@@ -257,16 +170,16 @@ for epoch in range(1, NUM_EPOCHS + 1):
             targets = targets.type(torch.LongTensor).squeeze().to(DEVICE)
             preds, _ = seg_model(points.float())
             
-            pred_choice = torch.softmax(preds, dim=2).argmax(dim=2)
+            pred_choice = torch.argmax(preds, dim=2)
             
             # Convert targets from one hot so torch can use it
             targets = torch.argmax(targets, dim=2)
-            loss = criterion(preds, targets, pred_choice) 
+            loss = criterion(preds, targets) 
 
             # get metrics
             correct = pred_choice.eq(targets.data).cpu().sum()
             accuracy = correct/float(BATCH_SIZE*NUM_POINTS_PER_SEG_SAMPLE)
-            mcc = mcc_metric(preds.transpose(2, 1), targets)
+            mcc = mcc_metric(preds.reshape(-1, 2), targets.reshape(-1))
             iou = compute_iou(targets, pred_choice)
 
             # update epoch loss and accuracy
@@ -299,26 +212,40 @@ for epoch in range(1, NUM_EPOCHS + 1):
     # save best models
     if valid_iou[-1] >= best_iou:
         best_iou = valid_iou[-1]
-        torch.save(seg_model.state_dict(), SEGMENTAION_MODEL_PATH + "pointnet2_" + TARGET_OBJECT_DATASET_NAME + f'_seg_model_{epoch}.pth')
+        path_w = os.path.join(SAVE_DIR, f'PointNet2_{dataset_name}_best_iou_{best_iou}.pth')
+        torch.save(seg_model.state_dict(),path_w)
 
+    # Update Graph
 
-fig, ax = plt.subplots(4, 1, figsize=(8, 5))
-ax[0].plot(np.arange(1, NUM_EPOCHS + 1), train_loss, label='train')
-ax[0].plot(np.arange(1, NUM_EPOCHS + 1), valid_loss, label='valid')
-ax[0].set_title('loss')
+    fig, ax = plt.subplots(4, 1, figsize=(8, 5))
+    epochs = np.arange(1, epoch + 1)
+    ax[0].plot(epochs, train_loss, label='train')
+    ax[0].plot(epochs, valid_loss, label='valid')
+    ax[0].set_title('loss')
 
-ax[1].plot(np.arange(1, NUM_EPOCHS + 1), train_accuracy)
-ax[1].plot(np.arange(1, NUM_EPOCHS + 1), valid_accuracy)
-ax[1].set_title('accuracy')
+    ax[1].plot(epochs, train_accuracy)
+    ax[1].plot(epochs, valid_accuracy)
+    ax[1].set_title('accuracy')
 
-ax[2].plot(np.arange(1, NUM_EPOCHS + 1), train_mcc)
-ax[2].plot(np.arange(1, NUM_EPOCHS + 1), valid_mcc)
-ax[2].set_title('mcc')
+    ax[2].plot(epochs, train_mcc)
+    ax[2].plot(epochs, valid_mcc)
+    ax[2].set_title('mcc')
 
-ax[3].plot(np.arange(1, NUM_EPOCHS + 1), train_iou)
-ax[3].plot(np.arange(1, NUM_EPOCHS + 1), valid_iou)
-ax[3].set_title('iou')
+    ax[3].plot(epochs, train_iou)
+    ax[3].plot(epochs, valid_iou)
+    ax[3].set_title('iou')
 
-fig.legend(loc='upper right')
-plt.subplots_adjust(wspace=0., hspace=0.85)
-plt.show()
+    fig.legend(loc='upper right')
+    plt.subplots_adjust(wspace=0., hspace=0.85)
+    path_i = os.path.join(SAVE_DIR, f'PointNet2_training_metrics_plot.png')
+    fig.savefig(path_i)
+
+    print("train_loss: ", train_loss)
+    print("valid_loss: ", valid_loss)
+    print("train_accuracy: ", train_accuracy)
+    print("valid_accuracy: ", valid_accuracy)
+    print("train_mcc: ", train_mcc)
+    print("valid_mcc: ", valid_mcc)
+    print("train_iou: ", train_iou)
+    print("valid_iou: ", valid_iou)
+    print("epochs: ", epochs)

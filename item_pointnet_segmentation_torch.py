@@ -214,7 +214,7 @@ for epoch in range(1, NUM_EPOCHS + 1):
     # save best models
     if valid_iou[-1] >= best_iou:
         best_iou = valid_iou[-1]
-        path_w = os.path.join(SAVE_DIR, f'RandLaNet_{dataset_name}_best_iou_{best_iou}.pth')
+        path_w = os.path.join(SAVE_DIR, f'PointNet_{dataset_name}_best_iou_{best_iou}.pth')
         torch.save(seg_model.state_dict(),path_w)
 
     # Update Graph
@@ -239,7 +239,7 @@ for epoch in range(1, NUM_EPOCHS + 1):
 
     fig.legend(loc='upper right')
     plt.subplots_adjust(wspace=0., hspace=0.85)
-    path_i = os.path.join(SAVE_DIR, f'training_metrics_plot.png')
+    path_i = os.path.join(SAVE_DIR, f'PointNet_training_metrics_plot.png')
     fig.savefig(path_i)
 
     print("train_loss: ", train_loss)
